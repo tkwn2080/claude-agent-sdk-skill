@@ -1,0 +1,13 @@
+{
+  "name": "claude-agent-sdk",
+  "version": "1.0.0",
+  "description": "Claude Code skill for building production AI agents with the Claude Agent SDK. Covers Python and TypeScript patterns for query(), ClaudeSDKClient, custom tools, hooks, subagents, and multi-agent orchestration.",
+  "author": {
+    "name": "tkwn2080",
+    "url": "https://github.com/tkwn2080"
+  },
+  "homepage": "https://github.com/tkwn2080/claude-agent-sdk-skill",
+  "repository": "https://github.com/tkwn2080/claude-agent-sdk-skill",
+  "license": "MIT",
+  "keywords": ["claude", "agent-sdk", "anthropic", "mcp", "ai-agents", "multi-agent"]
+}
