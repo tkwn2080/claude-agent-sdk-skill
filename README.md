@@ -1,88 +1,70 @@
-# claude-agent-sdk-skill
+# Claude Agent SDK Skill
 
-A Claude Code skill for building production AI agents with the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview).
+A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill for building production AI agents with the [Claude Agent SDK](https://docs.anthropic.com/en/docs/agents-and-tools/claude-agent-sdk).
 
-## Installation
+## Install
 
-### Option 1: Plugin Marketplace (Recommended)
-
-In Claude Code, run:
-
+**Plugin (recommended):**
 ```
-/plugin marketplace add tkwn2080/claude-agent-sdk-skill
+/install-plugin github:tkwn2080/claude-agent-sdk-skill
 ```
 
-The skill will be automatically available after adding the marketplace.
-
-### Option 2: Manual Installation
-
-Clone and copy to your personal skills directory:
-
+**Manual:**
 ```bash
 git clone https://github.com/tkwn2080/claude-agent-sdk-skill.git
 cp -r claude-agent-sdk-skill/skills/claude-agent-sdk ~/.claude/skills/
 ```
 
-Then restart Claude Code.
+Restart Claude Code after installing.
 
-## What This Skill Provides
+## What it does
 
-When working with the Claude Agent SDK, Claude will automatically:
+When you work with the Agent SDK, Claude automatically applies correct patterns for:
 
-- Use correct `query()` and `ClaudeSDKClient` patterns
-- Apply proper async/await patterns for Python and TypeScript
-- Create custom tools with correct MCP naming (`mcp__{server}__{tool}`)
-- Implement hooks with proper permission decision flow (deny > ask > allow)
-- Design multi-agent systems using orchestrator-worker patterns
-- Handle sessions and context resumption correctly
-- Follow security best practices (deny-by-default, confirmation gates)
+- `query()` and `ClaudeSDKClient` usage
+- Custom MCP tools (`mcp__{server}__{tool}` naming, streaming input)
+- Hooks and permission decisions (deny > ask > allow)
+- Multi-agent orchestration (orchestrator-worker, routing, parallelization)
+- Session management and context resumption
+- Security (deny-by-default, confirmation gates, audit logging)
 
 ## Coverage
 
-- **Core APIs**: `query()` for one-off tasks, `ClaudeSDKClient` for conversations
-- **Built-in Tools**: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Task
-- **Custom Tools**: In-process MCP servers, `@tool` decorator, `createSdkMcpServer`
-- **Hooks System**: PreToolUse, PostToolUse, Stop, SubagentStop lifecycle hooks
-- **Subagents**: Parallel task delegation with specialized toolsets
-- **Multi-Agent**: Orchestrator-worker, routing, parallelization patterns
-- **Sessions**: Context resumption across queries
-- **Security**: Permission models, secret management, audit logging
+| Topic | File | What's covered |
+|-------|------|----------------|
+| Core APIs | `SKILL.md` | `query()`, `ClaudeSDKClient`, configuration options, authentication (incl. OpenRouter) |
+| Python | `references/python-patterns.md` | All patterns: streaming input, hooks, permissions, `can_use_tool`, error handling |
+| TypeScript | `references/typescript-patterns.md` | All patterns: Zod schemas, hooks, `canUseTool`, Query object methods |
+| Hooks | `references/hooks-reference.md` | All 12 hook events, permission evaluation order, `acceptEdits` scope, troubleshooting |
+| Custom tools | `references/custom-tools.md` | `@tool` decorator, `createSdkMcpServer`, external MCP servers, annotations |
+| Multi-agent | `references/multi-agent.md` | Orchestrator-worker, routing, parallelization, evaluator-optimizer, prompt chaining |
+| Known issues | Across all files | Stream closed fixes, MCP + subagent limitations, `can_use_tool` bugs, headless mode |
 
 ## Structure
 
 ```
-claude-agent-sdk-skill/
-├── .claude-plugin/
-│   └── plugin.json                    # Plugin metadata
-├── skills/
-│   └── claude-agent-sdk/
-│       ├── SKILL.md                   # Main skill entry point
-│       └── references/
-│           ├── python-patterns.md     # Python examples and patterns
-│           ├── typescript-patterns.md # TypeScript examples and patterns
-│           ├── hooks-reference.md     # Complete hooks documentation
-│           ├── custom-tools.md        # Tool creation guide
-│           └── multi-agent.md         # Orchestration patterns
-├── README.md
-└── LICENSE
+skills/claude-agent-sdk/
+├── SKILL.md                          # Entry point — quick start, config, known issues
+└── references/
+    ├── python-patterns.md            # Python SDK patterns and examples
+    ├── typescript-patterns.md        # TypeScript SDK patterns and examples
+    ├── hooks-reference.md            # Hooks, permissions, troubleshooting
+    ├── custom-tools.md               # Tool creation and MCP servers
+    └── multi-agent.md                # Multi-agent orchestration patterns
 ```
 
 ## Requirements
 
 - Claude Code CLI
-- Anthropic API key (or Bedrock/Vertex credentials)
-- Python 3.10+ (for Python SDK)
-- Node.js 18+ (for TypeScript SDK)
+- Anthropic API key (or Bedrock / Vertex / Azure / OpenRouter credentials)
+- Python 3.10+ or Node.js 18+
 
 ## Sources
 
-This skill is based on primary Anthropic documentation:
-
-- [Agent SDK Overview](https://platform.claude.com/docs/en/agent-sdk/overview)
+- [Agent SDK docs](https://docs.anthropic.com/en/docs/agents-and-tools/claude-agent-sdk)
 - [Building Agents with the Claude Agent SDK](https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk)
-- [How We Built Our Multi-Agent Research System](https://www.anthropic.com/engineering/multi-agent-research-system)
-- [GitHub: anthropics/claude-agent-sdk-python](https://github.com/anthropics/claude-agent-sdk-python)
-- [GitHub: anthropics/claude-agent-sdk-typescript](https://github.com/anthropics/claude-agent-sdk-typescript)
+- [anthropics/claude-agent-sdk-python](https://github.com/anthropics/claude-agent-sdk-python)
+- [anthropics/claude-agent-sdk-typescript](https://github.com/anthropics/claude-agent-sdk-typescript)
 
 ## License
 
