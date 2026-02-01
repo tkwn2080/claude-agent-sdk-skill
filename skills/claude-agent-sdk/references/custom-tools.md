@@ -549,7 +549,7 @@ Annotation hints help the agent make better decisions about when and how to use 
 
 ### In-process MCP servers + subagents
 
-`create_sdk_mcp_server()` can fail with "Stream closed" under message-queue backpressure when subagents run in parallel or in the background. The SDK's internal transport (stdio pipes between the agent process and Claude Code CLI) gets blocked when multiple subagents compete for the MCP connection simultaneously.
+`create_sdk_mcp_server()` can fail with "Stream closed" under message-queue backpressure when subagents run in parallel or in the background. The SDK's internal transport gets blocked when multiple subagents compete for the MCP connection simultaneously.
 
 **References**: Python SDK #425, TS SDK #41
 

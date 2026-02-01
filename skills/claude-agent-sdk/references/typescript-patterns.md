@@ -525,6 +525,54 @@ const bypassMode: ClaudeAgentOptions = {
 };
 ```
 
+## Permission Callbacks (`canUseTool`)
+
+The `canUseTool` callback provides programmatic permission decisions for tools not covered by `permissionMode`. It requires streaming input mode (async generator prompt).
+
+```typescript
+import { query, type ClaudeAgentOptions } from "@anthropic-ai/claude-agent-sdk";
+
+const options: ClaudeAgentOptions = {
+  allowedTools: ["Read", "mcp__myserver__query"],
+  permissionMode: "acceptEdits",
+  canUseTool: async (toolName: string, toolInput: Record<string, unknown>) => {
+    // Allow known MCP tools
+    if (toolName.startsWith("mcp__myserver__")) {
+      // IMPORTANT: Always pass updatedInput with original args (SDK #320 workaround)
+      return { type: "allow", updatedInput: toolInput };
+    }
+
+    // Allow specific built-in tools
+    if (["WebSearch", "WebFetch"].includes(toolName)) {
+      return { type: "allow", updatedInput: toolInput };
+    }
+
+    // Deny unknown tools
+    return { type: "deny", message: `Tool ${toolName} not authorized` };
+  }
+};
+
+// Requires streaming input mode
+async function* generatePrompt() {
+  yield {
+    type: "user" as const,
+    message: {
+      role: "user" as const,
+      content: "Use the MCP tool to query the database"
+    }
+  };
+  // Keep open until result received (see custom-tools.md Known Issues)
+}
+
+for await (const message of query({ prompt: generatePrompt(), options })) {
+  if ("result" in message) {
+    console.log(message.result);
+  }
+}
+```
+
+**Alternative: PreToolUse hooks** — Use PreToolUse hooks to `allow` MCP tools instead of `canUseTool`. The hook path avoids the streaming input requirement and is generally more reliable for headless agents. See [hooks-reference.md](hooks-reference.md) for the pattern.
+
 ## External MCP Servers
 
 ```typescript

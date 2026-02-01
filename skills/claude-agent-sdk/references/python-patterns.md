@@ -384,6 +384,7 @@ bypass_mode = ClaudeAgentOptions(
 The `can_use_tool` callback provides programmatic permission decisions for tools not covered by `permission_mode`. It requires streaming input mode (async generator prompt).
 
 ```python
+import asyncio
 from claude_agent_sdk import (
     ClaudeAgentOptions, query,
     PermissionResultAllow, PermissionResultDeny
@@ -424,6 +425,8 @@ async def main():
     async for message in query(prompt=generate_prompt(), options=options):
         if hasattr(message, 'result'):
             print(message.result)
+
+asyncio.run(main())
 ```
 
 **Alternative: PreToolUse hooks** - Use PreToolUse hooks to `allow` MCP tools instead of `can_use_tool`. The hook path avoids the streaming input requirement and is generally more reliable for headless agents. See [hooks-reference.md](hooks-reference.md) for the pattern.

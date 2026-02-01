@@ -116,7 +116,7 @@ async def permission_handler(tool_name, tool_input, context):
 
 ### Headless mode gotcha
 
-Without `can_use_tool` or explicit PreToolUse `allow` decisions, any tool that requires permission will trigger the CLI's terminal UI prompt. In headless/SDK mode (no terminal), this causes:
+Without `can_use_tool` or explicit PreToolUse `allow` decisions, any tool that requires permission triggers an interactive prompt. When running the SDK without a terminal (headless/server mode), this causes:
 
 - **"Stream closed"** errors in hook callbacks
 - Permission request loops (Claude Code #14229)
@@ -656,7 +656,7 @@ async def track_tool_usage(input_data, tool_use_id, context):
 
 **Symptom**: Hook callbacks receive "Stream closed" errors, especially for MCP tools or permission-related hooks.
 
-**Root cause (permissions)**: The CLI uses its terminal UI for permission prompts. In headless/SDK mode (no terminal attached), the prompt transport fails because there's no stdin/stdout terminal to communicate with. This affects:
+**Root cause (permissions)**: Tools requiring permission trigger an interactive prompt. When running the SDK without a terminal (headless/server mode), the prompt transport fails because there's no stdin/stdout to communicate with. This affects:
 - MCP tools not covered by `acceptEdits`
 - Any tool that triggers a permission prompt without an explicit `allow` decision
 

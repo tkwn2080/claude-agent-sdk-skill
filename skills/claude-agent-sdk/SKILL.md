@@ -181,7 +181,7 @@ Hooks intercept agent execution at lifecycle points.
 | `SubagentStart` | Subagent begins | No | Yes |
 | `PermissionRequest` | Permission prompt shown | No | Yes |
 
-\*PostToolUseFailure: Present in Python SDK `types.py` (`HookEvent` Literal) but not yet in the official `HookInput` union type or documentation. May work in recent SDK versions (>= ~0.1.26).
+\*PostToolUseFailure: Present in Python SDK `types.py` (`HookEvent` Literal) but not yet in the official `HookInput` union type or documentation. May work in recent SDK versions (>= ~0.1.26). Test with your specific version before relying on it.
 
 ### Permission Decisions
 
@@ -269,6 +269,7 @@ ClaudeAgentOptions(
     resume="session-id",                  # Resume session
     hooks={...},                          # Lifecycle hooks
     agents={...},                         # Subagent definitions
+    can_use_tool=permission_handler,      # Programmatic permission callback (requires streaming input)
     model="claude-sonnet-4-5-20250929",   # Model selection (or "claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5")
     fallback_model="claude-haiku-4-5",    # Fallback if primary model unavailable
     system_prompt="Custom instructions",  # Override system prompt
@@ -439,11 +440,25 @@ The `acceptEdits` permission mode only auto-approves file operations (`Edit`, `W
 - `can_use_tool` callback - Programmatic per-tool decisions (requires streaming input mode)
 - PreToolUse hooks returning `allow` - Most reliable for headless agents
 
-### Hook "Stream closed" in headless mode
+### "Stream closed" in headless mode
 
-Without a `can_use_tool` callback, the CLI uses its terminal UI for permission prompts. In headless/SDK mode this fails with "Stream closed" because there is no terminal to display the prompt.
+Without a `can_use_tool` callback or explicit PreToolUse `allow` decisions, tools requiring permission trigger an interactive prompt. When running the SDK without a terminal (headless/server mode), this fails with "Stream closed" because there is no UI to display the prompt.
 
-**Workaround**: Use PreToolUse hooks to return explicit `allow`/`deny` decisions for all tools that would otherwise trigger a permission prompt. This avoids the terminal UI path entirely. See [hooks-reference.md](references/hooks-reference.md) for permission interaction details.
+**Workaround**: Use PreToolUse hooks to return explicit `allow`/`deny` decisions for all tools that would otherwise trigger a permission prompt. See [hooks-reference.md](references/hooks-reference.md) for permission interaction details.
+
+### Generator exhaustion causes "Stream closed"
+
+When using `query()` with an async generator prompt, the SDK closes stdin after the generator finishes yielding + a 60-second timeout. For long-running agents, this causes "Stream closed" errors on hooks and `can_use_tool` callbacks even when permissions are correctly configured.
+
+**Fix**: Keep the generator alive with an `asyncio.Event` until the agent completes. See [custom-tools.md](references/custom-tools.md) Known Issues for the full `stream_done` pattern.
+
+### Background subagents can't access MCP tools
+
+Subagents spawned with `run_in_background: true` silently fail when calling MCP tools. The background process doesn't inherit MCP server connections from the parent agent. Use foreground subagents for MCP-dependent tasks. ([Claude Code #13254](https://github.com/anthropics/claude-code/issues/13254))
+
+### `can_use_tool` empty arguments bug
+
+When using the `can_use_tool` callback, always pass `updated_input=tool_input` (the original arguments) in `PermissionResultAllow`. Omitting `updated_input` causes the tool to receive empty arguments. ([Python SDK #320](https://github.com/anthropics/claude-agent-sdk-python/issues/320))
 
 ## Reference Files
 

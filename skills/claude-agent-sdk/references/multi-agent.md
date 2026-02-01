@@ -262,19 +262,18 @@ AgentDefinition(
 
 ## Extended Thinking Integration
 
-Enable deeper reasoning for complex analysis:
+Enable deeper reasoning for complex analysis. Note: `maxThinkingTokens` is set on the top-level `ClaudeAgentOptions`, not on individual `AgentDefinition` entries. Subagents inherit the parent's thinking budget.
 
 **TypeScript:**
 ```typescript
 const options: ClaudeAgentOptions = {
   allowedTools: ["Read", "Glob", "Grep", "Task"],
-  maxThinkingTokens: 10000,
+  maxThinkingTokens: 10000,  // Applies to lead and subagents
   agents: {
     "deep-analyzer": {
       description: "Deep architectural analysis",
       prompt: "Think step by step about architecture decisions",
-      tools: ["Read", "Glob", "Grep"],
-      maxThinkingTokens: 5000
+      tools: ["Read", "Glob", "Grep"]
     }
   }
 };
@@ -506,3 +505,41 @@ asyncio.run(comprehensive_code_review("src"))
 6. **Parallelize wisely**: Only parallelize truly independent tasks
 7. **Aggregate efficiently**: Use references, not full output copying
 8. **Test individually**: Verify each subagent works before combining
+
+## Known Limitations
+
+### Background subagents can't access MCP tools
+
+Subagents spawned with `run_in_background: true` silently fail when calling MCP tools. The background subagent process doesn't inherit MCP server connections from the parent.
+
+**Workaround**: Use foreground subagents for any tasks that require MCP tools. Alternatively, have the background subagent return instructions that the parent agent executes with the MCP tools.
+
+**Reference**: [Claude Code #13254](https://github.com/anthropics/claude-code/issues/13254)
+
+### In-process MCP servers fail under parallel subagent load
+
+When using `create_sdk_mcp_server()` (in-process MCP servers) with multiple parallel subagents, the SDK's internal transport can get blocked by message-queue backpressure. This causes "Stream closed" errors.
+
+**Recommendation**: For multi-agent systems with MCP tools, use stdio subprocess MCP servers instead of in-process servers:
+
+```python
+# Use this for multi-agent setups:
+options = ClaudeAgentOptions(
+    mcp_servers={
+        "mytools": {
+            "command": "python",
+            "args": ["-m", "my_mcp_server"],
+        }
+    },
+    agents={...}
+)
+
+# Avoid in-process servers with subagents:
+# server = create_sdk_mcp_server(name="mytools", ...)
+```
+
+In-process servers are fine for single-agent use cases without subagents.
+
+**References**: [Python SDK #425](https://github.com/anthropics/claude-agent-sdk-python/issues/425), [TS SDK #41](https://github.com/anthropics/claude-agent-sdk-typescript/issues/41)
+
+See [custom-tools.md](custom-tools.md) Known Issues and [hooks-reference.md](hooks-reference.md) Troubleshooting for additional details on MCP and stream management.
