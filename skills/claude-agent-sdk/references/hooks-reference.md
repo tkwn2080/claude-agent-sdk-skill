@@ -17,15 +17,22 @@ Hooks are middleware functions that intercept agent execution at specific lifecy
 |-------|------|-----------|--------|------------|
 | `PreToolUse` | Before tool executes | Yes | Yes | Yes |
 | `PostToolUse` | After tool succeeds | No | Yes | Yes |
-| `PostToolUseFailure` | After tool fails | No | No | Yes |
+| `PostToolUseFailure` | After tool fails | No | Partial* | Yes |
 | `UserPromptSubmit` | User submits prompt | No | Yes | Yes |
 | `Stop` | Agent stops | No | Yes | Yes |
 | `SubagentStart` | Subagent begins | No | No | Yes |
 | `SubagentStop` | Subagent completes | No | Yes | Yes |
 | `PreCompact` | Before context compaction | No | Yes | Yes |
+| `Notification` | Status messages | No | No | Yes |
 | `SessionStart` | Session begins | No | No | Yes |
 | `SessionEnd` | Session ends | No | No | Yes |
-| `Notification` | Status messages | No | No | Yes |
+| `PermissionRequest` | Permission prompt shown | No | No | Yes |
+
+**Python SDK** supports 6 hooks: PreToolUse, PostToolUse, UserPromptSubmit, Stop, SubagentStop, PreCompact.
+
+**TypeScript SDK** supports all 12 hooks above. The TypeScript-only events (Notification, SessionStart, SessionEnd, SubagentStart, PermissionRequest) are useful for UI integration, session lifecycle management, and custom permission UX.
+
+\*PostToolUseFailure: Present in Python SDK `types.py` (`HookEvent` Literal union) and defines `PostToolUseFailureHookInput`, but not yet in the official `HookInput` union type or documentation. May work in recent SDK versions (>= ~0.1.26). Test with your specific version before relying on it.
 
 ## Hook Callback Signature
 
@@ -64,6 +71,77 @@ Hooks returning permission decisions are checked in order:
 2. **ask** - Requires user approval
 3. **allow** - Auto-approve
 4. **Default to ask** - If no decision returned
+
+## Permission Interactions with Hooks
+
+### Full Permission Evaluation Order
+
+When a tool is invoked, permissions are evaluated in this order:
+
+1. **Hooks** (PreToolUse) - First checked. Can `allow`, `deny`, or `ask`.
+2. **Permission Rules** - Static rules from configuration.
+3. **Permission Mode** - `default`, `acceptEdits`, `plan`, or `bypassPermissions`.
+4. **`can_use_tool` callback** - Final fallback for programmatic decisions.
+
+If no step produces a decision, the default behavior is to prompt the user for permission.
+
+### What `acceptEdits` covers (and doesn't)
+
+`acceptEdits` auto-approves:
+- File operations: `Edit`, `Write`, `NotebookEdit`
+- Filesystem Bash commands: `mkdir`, `rm`, `mv`, `cp`, `touch`
+
+`acceptEdits` does **NOT** auto-approve:
+- MCP tools (`mcp__*`)
+- Arbitrary Bash commands (non-filesystem)
+- `WebFetch`, `WebSearch`
+
+For MCP tools in `acceptEdits` mode, you need one of:
+- A PreToolUse hook returning `allow` for those tools
+- The `can_use_tool` callback
+- `bypassPermissions` mode
+
+### The `can_use_tool` callback
+
+The `can_use_tool` callback provides programmatic permission decisions at runtime. It requires streaming input mode (async generator prompt) because it automatically sets `permission_prompt_tool_name="stdio"`, enabling the control protocol over stdin/stdout.
+
+```python
+async def permission_handler(tool_name, tool_input, context):
+    if tool_name.startswith("mcp__myserver__"):
+        return PermissionResultAllow(updated_input=tool_input)
+    return PermissionResultDeny(message=f"Tool {tool_name} not authorized")
+```
+
+**Known issue**: Always pass `updated_input=tool_input` (the original arguments) in `PermissionResultAllow`. Some SDK versions send empty arguments if `updated_input` is omitted. (Python SDK #320)
+
+### Headless mode gotcha
+
+Without `can_use_tool` or explicit PreToolUse `allow` decisions, any tool that requires permission will trigger the CLI's terminal UI prompt. In headless/SDK mode (no terminal), this causes:
+
+- **"Stream closed"** errors in hook callbacks
+- Permission request loops (Claude Code #14229)
+- Silent tool failures
+
+**Recommendation for headless Python agents with MCP tools**: Use PreToolUse hooks to explicitly `allow` known MCP tools. This is more reliable than `can_use_tool` because it avoids the streaming input requirement.
+
+```python
+async def allow_mcp_tools(input_data, tool_use_id, context):
+    tool_name = input_data.get("tool_name", "")
+    if tool_name.startswith("mcp__myserver__"):
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow"
+            }
+        }
+    return {}
+
+options = ClaudeAgentOptions(
+    hooks={
+        "PreToolUse": [HookMatcher(matcher="mcp__.*", hooks=[allow_mcp_tools])]
+    }
+)
+```
 
 ## PreToolUse Hooks
 
@@ -270,6 +348,78 @@ const trackFileChanges: HookCallback = async (input, toolUseId, { signal }) => {
   }
 
   return {};
+};
+```
+
+## PostToolUseFailure Hooks
+
+Execute after a tool fails. Useful for error tracking and recovery logic.
+
+**Python SDK status**: The Python SDK `types.py` on `main` branch now includes `PostToolUseFailure` in the `HookEvent` Literal union and defines `PostToolUseFailureHookInput`. However, the official documentation still marks it as TypeScript-only. If using Python SDK >= ~0.1.26, it may work. Test with your specific version.
+
+**TypeScript:**
+```typescript
+const handleToolFailure: HookCallback = async (input, toolUseId, { signal }) => {
+  const toolName = (input as any).tool_name;
+  const error = (input as any).tool_output?.error ?? "Unknown error";
+
+  appendFileSync(
+    "./tool_failures.jsonl",
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      event: "tool_failure",
+      tool: toolName,
+      error,
+      toolUseId
+    }) + "\n"
+  );
+
+  return {};
+};
+```
+
+**Python (experimental - test with your SDK version):**
+```python
+async def handle_tool_failure(input_data, tool_use_id, context):
+    tool_name = input_data.get("tool_name", "unknown")
+    error = input_data.get("tool_output", {}).get("error", "Unknown error")
+
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "event": "tool_failure",
+        "tool": tool_name,
+        "error": error,
+        "tool_use_id": tool_use_id
+    }
+
+    with open("./tool_failures.jsonl", "a") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+    return {}
+
+# Note: May not work in all Python SDK versions
+options = ClaudeAgentOptions(
+    hooks={
+        "PostToolUseFailure": [HookMatcher(hooks=[handle_tool_failure])]
+    }
+)
+```
+
+## PermissionRequest Hooks (TypeScript Only)
+
+Execute when a permission prompt is shown to the user. Useful for custom permission UX.
+
+```typescript
+const onPermissionRequest: HookCallback = async (input, toolUseId, { signal }) => {
+  // Log permission requests for audit
+  console.log(`Permission requested for tool: ${(input as any).tool_name}`);
+  return {};
+};
+
+const options = {
+  hooks: {
+    PermissionRequest: [{ hooks: [onPermissionRequest] }]
+  }
 };
 ```
 
@@ -499,3 +649,73 @@ async def track_tool_usage(input_data, tool_use_id, context):
 
     return {}
 ```
+
+## Troubleshooting Hook Errors
+
+### "Stream closed" during hook callbacks
+
+**Symptom**: Hook callbacks receive "Stream closed" errors, especially for MCP tools or permission-related hooks.
+
+**Root cause (permissions)**: The CLI uses its terminal UI for permission prompts. In headless/SDK mode (no terminal attached), the prompt transport fails because there's no stdin/stdout terminal to communicate with. This affects:
+- MCP tools not covered by `acceptEdits`
+- Any tool that triggers a permission prompt without an explicit `allow` decision
+
+**Workaround**: Use PreToolUse hooks to return explicit `allow` decisions for all tools that would otherwise trigger a permission prompt. See the "Permission Interactions with Hooks" section above.
+
+**Root cause (generator exhaustion)**: When using `query()` with an async generator for `prompt`, the SDK's `stream_input()` method closes stdin after the generator exhausts + a 60-second timeout (`CLAUDE_CODE_STREAM_CLOSE_TIMEOUT`). For long-running agents, this causes "Stream closed" errors on hook callbacks and `can_use_tool` responses even when permissions are correctly configured.
+
+**Fix**: Keep the generator alive until the agent completes:
+
+```python
+import asyncio
+from claude_agent_sdk import query, ResultMessage
+
+stream_done = asyncio.Event()
+
+async def generate_messages():
+    yield {
+        "type": "user",
+        "message": {"role": "user", "content": task_prompt},
+    }
+    # Keeps stream_input() in its async-for loop so stdin stays open
+    await stream_done.wait()
+
+try:
+    async for message in query(prompt=generate_messages(), options=options):
+        if isinstance(message, ResultMessage):
+            result_message = message
+finally:
+    stream_done.set()  # Unblock generator → stdin closes cleanly
+```
+
+**Why it works**: `stream_input()` iterates the generator with `async for`. While the generator is suspended on `await stream_done.wait()`, the loop never exits, so stdin stays open. When `query()` finishes iterating (after `ResultMessage`), the `finally` block sets the event, the generator returns, and `stream_input` proceeds to close stdin cleanly after `_first_result_event` is already set.
+
+**References**: [Claude Code #9705](https://github.com/anthropics/claude-code/issues/9705), [Claude Code #14229](https://github.com/anthropics/claude-code/issues/14229), [anthropic-sdk-typescript #840](https://github.com/anthropics/anthropic-sdk-typescript/issues/840)
+
+### `can_use_tool` empty arguments bug
+
+**Symptom**: When using the `can_use_tool` callback, the `tool_input` argument arrives as an empty dict `{}` even though the tool was called with arguments.
+
+**Root cause**: Python SDK bug where `PermissionResultAllow` without `updated_input` causes the original arguments to be dropped.
+
+**Workaround**: Always pass through the original input in your allow response:
+
+```python
+async def permission_handler(tool_name, tool_input, context):
+    # IMPORTANT: Always include updated_input with the original arguments
+    return PermissionResultAllow(updated_input=tool_input)
+
+    # NOT this - arguments will be empty:
+    # return PermissionResultAllow()
+```
+
+**Reference**: Python SDK #320
+
+### Hook errors don't crash the agent
+
+Hook callback errors are caught by the SDK and don't terminate the agent process. However, they can cause:
+- **Tool failures**: If a PreToolUse hook errors out, the tool may proceed without the expected permission decision, potentially triggering a terminal permission prompt (which fails in headless mode).
+- **Infinite retry loops**: If a hook consistently fails, Claude may retry the tool call repeatedly, burning through turns and budget.
+- **Silent data loss**: PostToolUse audit hooks that error won't log the tool execution.
+
+**Best practice**: Always wrap hook logic in try/except and return `{}` on error to ensure graceful degradation.

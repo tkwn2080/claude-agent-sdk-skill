@@ -297,17 +297,20 @@ const agents: Record<string, AgentDefinition> = {
   "security-auditor": {
     description: "Security specialist for vulnerability detection",
     prompt: "Analyze code for security issues: injection, auth bypass, data exposure",
-    tools: ["Read", "Glob", "Grep"]
+    tools: ["Read", "Glob", "Grep"],
+    model: "sonnet"  // "sonnet" | "opus" | "haiku" | "inherit"
   },
   "performance-analyst": {
     description: "Performance optimization specialist",
     prompt: "Identify performance bottlenecks and optimization opportunities",
-    tools: ["Read", "Glob", "Grep"]
+    tools: ["Read", "Glob", "Grep"],
+    model: "sonnet"
   },
   "documentation-checker": {
     description: "Documentation quality reviewer",
     prompt: "Check docstrings, comments, and README completeness",
-    tools: ["Read", "Glob", "Grep"]
+    tools: ["Read", "Glob", "Grep"],
+    model: "haiku"
   }
 };
 
@@ -563,6 +566,64 @@ for await (const message of query({
     console.log(message.result);
   }
 }
+```
+
+## Query Object Methods
+
+The `Query` object returned by `query()` exposes additional control and informational methods:
+
+```typescript
+import { query } from "@anthropic-ai/claude-agent-sdk";
+
+const q = query({
+  prompt: "Analyze codebase",
+  options: {
+    allowedTools: ["Read", "Glob", "Grep"],
+    enableFileCheckpointing: true
+  }
+});
+
+// Control methods
+await q.interrupt();                          // Cancel current operation
+await q.rewindFiles();                        // Restore file checkpoints
+await q.setPermissionMode("acceptEdits");     // Change permission mode mid-session
+await q.setModel("claude-opus-4-5");          // Switch model mid-session
+await q.setMaxThinkingTokens(10000);          // Adjust thinking budget
+
+// Informational methods
+const commands = await q.supportedCommands(); // List available commands
+const models = await q.supportedModels();     // List available models
+const mcpStatus = await q.mcpServerStatus();  // Check MCP server health
+const account = await q.accountInfo();        // Get account info
+```
+
+## Extended Options
+
+```typescript
+import { type ClaudeAgentOptions } from "@anthropic-ai/claude-agent-sdk";
+
+const options: ClaudeAgentOptions = {
+  allowedTools: ["Read", "Edit", "Bash"],
+  model: "claude-sonnet-4-5-20250929",       // Pinned model version
+  fallbackModel: "claude-haiku-4-5",          // Fallback if primary unavailable
+  systemPrompt: "You are a senior code reviewer",
+  maxBudgetUsd: 2.0,                          // Spending limit
+  maxThinkingTokens: 10000,                   // Extended thinking budget
+  enableFileCheckpointing: true,              // File state snapshots
+  outputFormat: {                             // Structured JSON output
+    type: "json",
+    schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string" },
+        issues: { type: "array" }
+      }
+    }
+  },
+  plugins: [],                                // Plugin extensions
+  sandbox: true,                              // Sandboxed execution
+  settingSources: []                          // Custom setting sources
+};
 ```
 
 ## Type Definitions Reference

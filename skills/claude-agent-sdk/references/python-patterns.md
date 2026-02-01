@@ -64,20 +64,24 @@ async def interactive_session():
     )
 
     async with ClaudeSDKClient(options=options) as client:
+        await client.connect()
+
         # First exchange
         await client.query("Read and summarize the main module")
-        async for msg in client.receive_response():
+        async for msg in client.receive_messages():
             print_message(msg)
 
         # Follow-up with context
         await client.query("What are the key functions?")
-        async for msg in client.receive_response():
+        async for msg in client.receive_messages():
             print_message(msg)
 
         # Another follow-up
         await client.query("Add docstrings to the public functions")
-        async for msg in client.receive_response():
+        async for msg in client.receive_messages():
             print_message(msg)
+
+        await client.disconnect()
 
 def print_message(msg):
     if hasattr(msg, 'content'):
@@ -375,6 +379,55 @@ bypass_mode = ClaudeAgentOptions(
 )
 ```
 
+## Permission Callbacks (`can_use_tool`)
+
+The `can_use_tool` callback provides programmatic permission decisions for tools not covered by `permission_mode`. It requires streaming input mode (async generator prompt).
+
+```python
+from claude_agent_sdk import (
+    ClaudeAgentOptions, query,
+    PermissionResultAllow, PermissionResultDeny
+)
+
+async def permission_handler(tool_name, tool_input, context):
+    """Handle permission requests for tools not covered by permission_mode."""
+    # Allow known MCP tools
+    if tool_name.startswith("mcp__myserver__"):
+        # IMPORTANT: Always pass through original input (Python SDK #320 workaround)
+        return PermissionResultAllow(updated_input=tool_input)
+
+    # Allow specific built-in tools
+    if tool_name in ("WebSearch", "WebFetch"):
+        return PermissionResultAllow(updated_input=tool_input)
+
+    # Deny unknown tools
+    return PermissionResultDeny(message=f"Tool {tool_name} not authorized")
+
+# Requires streaming input mode
+async def generate_prompt():
+    yield {
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": "Use the MCP tool to query the database"
+        }
+    }
+    # Keep open until result received (see custom-tools.md Known Issues)
+
+options = ClaudeAgentOptions(
+    allowed_tools=["Read", "mcp__myserver__query"],
+    permission_mode="acceptEdits",
+    can_use_tool=permission_handler,  # Auto-sets permission_prompt_tool_name="stdio"
+)
+
+async def main():
+    async for message in query(prompt=generate_prompt(), options=options):
+        if hasattr(message, 'result'):
+            print(message.result)
+```
+
+**Alternative: PreToolUse hooks** - Use PreToolUse hooks to `allow` MCP tools instead of `can_use_tool`. The hook path avoids the streaming input requirement and is generally more reliable for headless agents. See [hooks-reference.md](hooks-reference.md) for the pattern.
+
 ## Environment Variables
 
 ```python
@@ -414,9 +467,70 @@ options2 = ClaudeAgentOptions(
 ```python
 from claude_agent_sdk import ClaudeAgentOptions
 
-# Use specific model
+# Use specific model (pinned version)
 options = ClaudeAgentOptions(
-    model="claude-sonnet-4-20250514",  # or claude-opus-4-20250514
+    model="claude-sonnet-4-5-20250929",  # or claude-opus-4-5-20251101
     allowed_tools=["Read", "Edit", "Bash"]
 )
+
+# Use short alias
+options = ClaudeAgentOptions(
+    model="claude-sonnet-4-5",  # or "claude-opus-4-5", "claude-haiku-4-5"
+    allowed_tools=["Read", "Edit", "Bash"]
+)
+
+# With fallback model
+options = ClaudeAgentOptions(
+    model="claude-opus-4-5",
+    fallback_model="claude-sonnet-4-5",
+    allowed_tools=["Read", "Edit", "Bash"]
+)
+```
+
+## Extended Options
+
+```python
+from claude_agent_sdk import ClaudeAgentOptions
+
+options = ClaudeAgentOptions(
+    allowed_tools=["Read", "Edit", "Bash"],
+    system_prompt="You are a senior code reviewer",
+    max_budget_usd=2.0,
+    max_thinking_tokens=10000,
+    enable_file_checkpointing=True,
+    output_format={
+        "type": "json",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "issues": {"type": "array"}
+            }
+        }
+    }
+)
+```
+
+## ClaudeSDKClient Methods
+
+```python
+from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
+
+async def full_client_example():
+    options = ClaudeAgentOptions(
+        allowed_tools=["Read", "Edit", "Bash"],
+        enable_file_checkpointing=True
+    )
+
+    async with ClaudeSDKClient(options=options) as client:
+        await client.connect()                     # Establish connection
+
+        await client.query("Refactor auth module")
+        async for msg in client.receive_messages(): # Stream messages
+            print_message(msg)
+
+        await client.interrupt()                   # Cancel current operation
+        await client.rewind_files()                # Restore file checkpoints
+        status = await client.get_mcp_status()     # Check MCP server status
+        await client.disconnect()                  # Clean up
 ```

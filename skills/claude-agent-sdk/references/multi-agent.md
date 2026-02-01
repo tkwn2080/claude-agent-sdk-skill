@@ -32,25 +32,25 @@ from claude_agent_sdk import query, ClaudeAgentOptions, AgentDefinition
 
 options = ClaudeAgentOptions(
     allowed_tools=["Read", "Glob", "Grep", "Task"],
-    model="claude-opus-4-20250514",  # Lead uses stronger model
+    model="claude-opus-4-5",  # Lead uses stronger model
     agents={
         "security-auditor": AgentDefinition(
             description="Security specialist for vulnerability detection",
             prompt="Analyze code for security issues: SQL injection, XSS, auth bypass, data exposure. Report severity and remediation.",
             tools=["Read", "Glob", "Grep"],
-            model="claude-sonnet-4-20250514"  # Subagents use faster model
+            model="claude-sonnet-4-5"  # Subagents use faster model
         ),
         "performance-analyst": AgentDefinition(
             description="Performance optimization specialist",
             prompt="Identify performance bottlenecks: N+1 queries, memory leaks, inefficient algorithms. Suggest optimizations.",
             tools=["Read", "Glob", "Grep"],
-            model="claude-sonnet-4-20250514"
+            model="claude-sonnet-4-5"
         ),
         "test-coverage-checker": AgentDefinition(
             description="Test coverage and quality reviewer",
             prompt="Analyze test coverage, identify untested code paths, suggest missing test cases.",
             tools=["Read", "Glob", "Grep"],
-            model="claude-sonnet-4-20250514"
+            model="claude-sonnet-4-5"
         )
     }
 )
@@ -229,7 +229,7 @@ AgentDefinition(
     description: str,     # What the agent does (shown to lead)
     prompt: str,          # System prompt for the subagent
     tools: list[str],     # Tools available to subagent
-    model: str = None     # Optional model override
+    model: str = None     # "sonnet" | "opus" | "haiku" | "inherit" (or full model ID)
 )
 ```
 
@@ -300,10 +300,10 @@ const options: ClaudeAgentOptions = {
 
 ```python
 # Orchestrator: Use strongest model for planning
-lead_model = "claude-opus-4-20250514"
+lead_model = "claude-opus-4-5"
 
 # Workers: Use faster models for execution
-worker_model = "claude-sonnet-4-20250514"
+worker_model = "claude-sonnet-4-5"
 
 options = ClaudeAgentOptions(
     model=lead_model,
@@ -403,7 +403,7 @@ from claude_agent_sdk import query, ClaudeAgentOptions, AgentDefinition
 async def comprehensive_code_review(directory: str):
     options = ClaudeAgentOptions(
         allowed_tools=["Read", "Glob", "Grep", "Task"],
-        model="claude-opus-4-20250514",
+        model="claude-opus-4-5",
         agents={
             "security": AgentDefinition(
                 description="Security vulnerability scanner",
@@ -414,7 +414,7 @@ async def comprehensive_code_review(directory: str):
                 - Authentication/authorization flaws
                 Report with severity, location, and fix.""",
                 tools=["Read", "Glob", "Grep"],
-                model="claude-sonnet-4-20250514"
+                model="claude-sonnet-4-5"
             ),
             "performance": AgentDefinition(
                 description="Performance issue detector",
@@ -425,7 +425,7 @@ async def comprehensive_code_review(directory: str):
                 - Missing indexes
                 Report with impact and optimization.""",
                 tools=["Read", "Glob", "Grep"],
-                model="claude-sonnet-4-20250514"
+                model="claude-sonnet-4-5"
             ),
             "maintainability": AgentDefinition(
                 description="Code quality reviewer",
@@ -436,7 +436,7 @@ async def comprehensive_code_review(directory: str):
                 - Inconsistent naming
                 Report with refactoring suggestions.""",
                 tools=["Read", "Glob", "Grep"],
-                model="claude-sonnet-4-20250514"
+                model="claude-sonnet-4-5"
             ),
             "testing": AgentDefinition(
                 description="Test coverage analyzer",
@@ -447,7 +447,7 @@ async def comprehensive_code_review(directory: str):
                 - Integration test gaps
                 Report with test recommendations.""",
                 tools=["Read", "Glob", "Grep", "Bash"],
-                model="claude-sonnet-4-20250514"
+                model="claude-sonnet-4-5"
             )
         }
     )

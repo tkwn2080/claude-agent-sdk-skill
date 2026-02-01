@@ -508,6 +508,32 @@ options = ClaudeAgentOptions(
 )
 ```
 
+## Tool Annotations (TypeScript)
+
+TypeScript tools support annotations that provide metadata about tool behavior:
+
+```typescript
+const readOnlyTool = tool(
+  "list_items",
+  "List items from database",
+  { category: z.string().optional() },
+  async (args) => {
+    const items = await db.list(args.category);
+    return { content: [{ type: "text" as const, text: JSON.stringify(items) }] };
+  },
+  {
+    annotations: {
+      readOnlyHint: true,         // Tool doesn't modify state
+      destructiveHint: false,     // Tool isn't destructive
+      idempotentHint: true,       // Safe to retry
+      openWorldHint: false        // Operates on closed set of data
+    }
+  }
+);
+```
+
+Annotation hints help the agent make better decisions about when and how to use tools.
+
 ## Best Practices
 
 1. **Descriptive names**: Tool names should clearly indicate purpose
@@ -518,3 +544,71 @@ options = ClaudeAgentOptions(
 6. **Validation**: Validate inputs before processing
 7. **Idempotency**: Design tools to be safely retried
 8. **Least privilege**: Only expose necessary functionality
+
+## Known Issues
+
+### In-process MCP servers + subagents
+
+`create_sdk_mcp_server()` can fail with "Stream closed" under message-queue backpressure when subagents run in parallel or in the background. The SDK's internal transport (stdio pipes between the agent process and Claude Code CLI) gets blocked when multiple subagents compete for the MCP connection simultaneously.
+
+**References**: Python SDK #425, TS SDK #41
+
+**Recommendation**: For multi-agent production systems, prefer stdio subprocess MCP servers:
+
+```python
+# Prefer this for multi-agent setups:
+options = ClaudeAgentOptions(
+    mcp_servers={
+        "mytools": {
+            "command": "python",
+            "args": ["-m", "my_mcp_server"],
+        }
+    }
+)
+
+# Instead of in-process:
+# server = create_sdk_mcp_server(name="mytools", ...)
+# options = ClaudeAgentOptions(mcp_servers={"mytools": server})
+```
+
+In-process servers are fine for single-agent simple use cases where no subagents are involved.
+
+### Background subagents can't access MCP tools
+
+Subagents spawned with `run_in_background: true` silently fail MCP tool calls. The background subagent process doesn't inherit the MCP server connections from the parent agent.
+
+**Reference**: Claude Code #13254
+
+**Workaround**: Use foreground subagents for tasks that require MCP tools, or have the background subagent return instructions that the parent agent executes with MCP tools.
+
+### Stream Closed Errors — Keep Generator Alive Pattern
+
+When using `query()` with an async generator for `prompt`, the SDK's `stream_input()` method closes stdin after the generator exhausts + a 60-second timeout (`CLAUDE_CODE_STREAM_CLOSE_TIMEOUT`). For long-running agents, this causes "Stream closed" errors on hook callbacks and `can_use_tool` responses.
+
+**Fix**: Keep the generator alive until the agent completes by awaiting an `asyncio.Event` after yielding the initial message:
+
+```python
+import asyncio
+from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+
+stream_done = asyncio.Event()
+
+async def generate_messages():
+    yield {
+        "type": "user",
+        "message": {"role": "user", "content": task_prompt},
+    }
+    # Keeps stream_input() in its async-for loop so stdin stays open
+    await stream_done.wait()
+
+try:
+    async for message in query(prompt=generate_messages(), options=options):
+        if isinstance(message, ResultMessage):
+            result_message = message
+finally:
+    stream_done.set()  # Unblock generator → stdin closes cleanly
+```
+
+**Why it works**: `stream_input()` iterates the generator with `async for`. While the generator is suspended on `await stream_done.wait()`, the loop never exits, so stdin stays open. When `query()` finishes iterating (after `ResultMessage`), the `finally` block sets the event, the generator returns, and `stream_input` proceeds to close stdin cleanly after `_first_result_event` is already set.
+
+**References**: [Claude Code #9705](https://github.com/anthropics/claude-code/issues/9705), [anthropic-sdk-typescript #840](https://github.com/anthropics/anthropic-sdk-typescript/issues/840)
