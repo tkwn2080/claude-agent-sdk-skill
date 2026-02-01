@@ -329,6 +329,26 @@ async for message in query(prompt="Task", options=options):
 - **Google Vertex AI**: `CLAUDE_CODE_USE_VERTEX=1` + GCP credentials
 - **Microsoft Azure AI Foundry**: `CLAUDE_CODE_USE_FOUNDRY=1` + Azure credentials
 
+### OpenRouter
+
+Route Agent SDK requests through [OpenRouter](https://openrouter.ai) for access to multiple model providers, fallbacks, and cost optimization:
+
+```bash
+export ANTHROPIC_BASE_URL="https://openrouter.ai/api"
+export ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY"
+export ANTHROPIC_API_KEY=""  # Must be explicitly empty
+```
+
+The Agent SDK inherits Claude Code's model override environment variables, so you can route to different OpenRouter models:
+
+```bash
+# Route to specific models via OpenRouter
+export ANTHROPIC_DEFAULT_SONNET_MODEL="anthropic/claude-sonnet-4"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="anthropic/claude-opus-4"
+```
+
+**Important**: `ANTHROPIC_API_KEY` must be set to an empty string — if omitted entirely, the SDK will fail with an authentication error. The actual auth is handled by `ANTHROPIC_AUTH_TOKEN`.
+
 ## Structured Outputs
 
 Use `output_format` for validated JSON responses:
