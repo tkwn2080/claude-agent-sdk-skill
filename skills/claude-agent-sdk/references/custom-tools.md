@@ -585,7 +585,7 @@ Subagents spawned with `run_in_background: true` silently fail MCP tool calls. T
 
 When using `query()` with an async generator for `prompt`, the SDK's `stream_input()` method closes stdin after the generator exhausts + a 60-second timeout (`CLAUDE_CODE_STREAM_CLOSE_TIMEOUT`). For long-running agents, this causes "Stream closed" errors on hook callbacks and `can_use_tool` responses.
 
-**Fix**: Keep the generator alive until the agent completes by awaiting an `asyncio.Event` after yielding the initial message:
+**Fix**: Keep the generator alive until the agent completes by awaiting an `asyncio.Event` after yielding the initial message. **Critical**: You MUST `break` after receiving `ResultMessage` — `query()` does NOT auto-terminate after the result. Without the break, the loop waits for the stream to close, but the stream can't close because the generator is blocked on `stream_done.wait()`, which only fires in `finally` after the loop exits → **circular deadlock**.
 
 ```python
 import asyncio
@@ -605,10 +605,13 @@ try:
     async for message in query(prompt=generate_messages(), options=options):
         if isinstance(message, ResultMessage):
             result_message = message
+            break  # REQUIRED: query() does not auto-terminate after ResultMessage
 finally:
     stream_done.set()  # Unblock generator → stdin closes cleanly
 ```
 
-**Why it works**: `stream_input()` iterates the generator with `async for`. While the generator is suspended on `await stream_done.wait()`, the loop never exits, so stdin stays open. When `query()` finishes iterating (after `ResultMessage`), the `finally` block sets the event, the generator returns, and `stream_input` proceeds to close stdin cleanly after `_first_result_event` is already set.
+**Why it works**: `stream_input()` iterates the generator with `async for`. While the generator is suspended on `await stream_done.wait()`, the loop never exits, so stdin stays open. The `break` after `ResultMessage` exits the consumer loop, which triggers the `finally` block, sets the event, the generator returns, and `stream_input` proceeds to close stdin cleanly.
+
+**Without the `break`**: The `async for` loop continues waiting for the next message from `query()`'s internal `_read_messages()`, which waits for an `"end"` event from the transport. That event only fires after stdin closes. But stdin is held open by the generator awaiting `stream_done.wait()`. The event is only set in `finally` after the loop exits. **Result: permanent deadlock.**
 
 **References**: [Claude Code #9705](https://github.com/anthropics/claude-code/issues/9705), [anthropic-sdk-typescript #840](https://github.com/anthropics/anthropic-sdk-typescript/issues/840)

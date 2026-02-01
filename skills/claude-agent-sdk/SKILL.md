@@ -313,14 +313,17 @@ except ProcessError as e:
 ## Message Types
 
 ```python
+from claude_agent_sdk import ResultMessage, AssistantMessage
+
 # Stream yields different message types
 async for message in query(prompt="Task", options=options):
-    if message.type == "assistant":
+    if isinstance(message, AssistantMessage):
         print(message.content)
-    elif message.type == "result":
+    elif isinstance(message, ResultMessage):
         if message.subtype == "success":
             print(f"Completed: {message.result}")
         print(f"Cost: ${message.total_cost_usd}")
+        break  # IMPORTANT: query() does not auto-terminate after ResultMessage
 ```
 
 ## Authentication
@@ -445,6 +448,22 @@ The `acceptEdits` permission mode only auto-approves file operations (`Edit`, `W
 Without a `can_use_tool` callback or explicit PreToolUse `allow` decisions, tools requiring permission trigger an interactive prompt. When running the SDK without a terminal (headless/server mode), this fails with "Stream closed" because there is no UI to display the prompt.
 
 **Workaround**: Use PreToolUse hooks to return explicit `allow`/`deny` decisions for all tools that would otherwise trigger a permission prompt. See [hooks-reference.md](references/hooks-reference.md) for permission interaction details.
+
+### `query()` does NOT auto-terminate after `ResultMessage`
+
+The `async for` loop over `query()` does **not** end when `ResultMessage` arrives. Internally, `query()` waits for an `"end"` event from `_read_messages()`, which only fires after the transport closes. **You must `break` explicitly after `ResultMessage`.**
+
+With a plain string prompt this may appear to work (the stream eventually closes), but with streaming input (async generator + `stream_done` pattern), omitting `break` causes a **circular deadlock**: the loop waits for the stream to close → the stream waits for the generator to finish → the generator waits for `stream_done.set()` in `finally` → `finally` only runs after the loop exits.
+
+```python
+# CORRECT
+async for message in query(prompt=generate_messages(), options=options):
+    if isinstance(message, ResultMessage):
+        result = message
+        break  # Required — prevents deadlock
+```
+
+See [custom-tools.md](references/custom-tools.md) Known Issues for the full `stream_done` pattern.
 
 ### Generator exhaustion causes "Stream closed"
 

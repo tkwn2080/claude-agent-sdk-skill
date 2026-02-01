@@ -26,7 +26,7 @@ export ANTHROPIC_API_KEY=your-api-key
 
 ```python
 import asyncio
-from claude_agent_sdk import query, ClaudeAgentOptions
+from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
 
 async def main():
     async for message in query(
@@ -42,14 +42,20 @@ async def main():
                 if hasattr(block, 'text'):
                     print(block.text)
 
-        if hasattr(message, 'result'):
+        if isinstance(message, ResultMessage):
             print(f"\nResult: {message.result}")
             print(f"Duration: {message.duration_ms}ms")
             if message.total_cost_usd:
                 print(f"Cost: ${message.total_cost_usd:.4f}")
+            break  # IMPORTANT: query() does not auto-terminate after ResultMessage
 
 asyncio.run(main())
 ```
+
+> **Note**: With a plain string prompt (no streaming generator), omitting `break` may
+> still work because the stream closes naturally once the generator exhausts. But with
+> streaming input (async generator + `stream_done` pattern), `break` is **required** to
+> avoid a circular deadlock. See [custom-tools.md](custom-tools.md#stream-closed-errors--keep-generator-alive-pattern) Known Issues.
 
 ## ClaudeSDKClient for Conversations
 
@@ -143,7 +149,7 @@ Custom MCP tools require streaming input:
 ```python
 import asyncio
 from typing import AsyncIterator, Any
-from claude_agent_sdk import query, ClaudeAgentOptions, tool, create_sdk_mcp_server
+from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage, tool, create_sdk_mcp_server
 
 @tool("lookup_user", "Look up user by ID", {"user_id": str})
 async def lookup_user(args: dict[str, Any]) -> dict[str, Any]:
@@ -178,8 +184,9 @@ async def main():
             max_turns=5
         )
     ):
-        if hasattr(message, 'result'):
+        if isinstance(message, ResultMessage):
             print(message.result)
+            break  # Required with streaming input to prevent deadlock
 
 asyncio.run(main())
 ```
